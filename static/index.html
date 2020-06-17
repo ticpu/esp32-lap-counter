@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="fr">
+<head>
+	<meta charset="utf-8">
+	<title>SegmentDisplay</title>
+<style type="text/css">
+body {
+	font-family: sans-serif;
+}
+
+.laps-counter-box {
+	background-color: #050505;
+	display: inline-block;
+	width: 320px;
+	height: 200px;
+}
+
+.laps-counter {
+	position: relative;
+	width: 290px;
+	left: 10px;
+	top: 10px;
+}
+
+.segment {
+	display: inline-block;
+	margin 20px;
+}
+
+.segment-horizontal {
+	border-style: solid;
+	border 1px black;
+	width: 67px;
+	height: 27px;
+	padding: 0;
+	margin: 2px 2px 2px 27px;
+}
+
+.segment-vertical {
+	border-style: solid;
+	border 1px black;
+	width: 27px;
+	height: 60px;
+	padding: 0;
+	margin-right: 64px;
+}
+
+.counter-commands {
+	display: inline-block;
+}
+
+.counter-commands input {
+	font-size: 120%;
+	font-weight: bold;
+}
+
+.plusminus input {
+	width: 100px;
+	height: 100px;
+}
+
+.setreset input {
+	width: 200px;
+	height: 100px;
+}
+</style>
+</head>
+
+<body>
+	<div class="laps-counter-box">
+		<div class="laps-counter">
+			<canvas id="display" width="300" height="160"></canvas>
+		</div>
+	</div>
+	<div class="counter-commands plusminus">
+		<input id="counter-plus" type="button" value="+"/><br/>
+		<input id="counter-minus" type="button" value="-"/><br/>
+	</div>
+	<div class="counter-commands setreset">
+		<input id="counter-set" type="button" value="SET"/><br/>
+		<input id="counter-reset" type="button" value="RESET"/><br/>
+	</div>
+
+	<p></p>
+	<p><input id="advanced-button" type="button" value="Options avancés >"/></p>
+
+	<div id="advanced-panel">
+		<div id="calibration-data" style="display: none;">
+			<p>Calibration des segments</p>
+
+			<div id="calibration-data-options">
+				<input id="calibration-start" type="button" value="Start calibration"/>
+				<input id="calibration-data-invert" type="checkbox"/> <label for="calibration-data-invert">Inverser l'affichage (on/off)</label>
+			</div>
+
+			<p></p>
+
+			<div id="calibration-data-0" class="segment">
+				<input id="calibration-data-0-1" type="button" class="segment-horizontal"/><br/>
+				<input id="calibration-data-0-2" type="button" class="segment-vertical"/>
+				<input id="calibration-data-0-3" type="button" class="segment-vertical"/><br/>
+				<input id="calibration-data-0-4" type="button" class="segment-horizontal"/><br/>
+				<input id="calibration-data-0-5" type="button" class="segment-vertical"/>
+				<input id="calibration-data-0-6" type="button" class="segment-vertical"/><br/>
+				<input id="calibration-data-0-7" type="button" class="segment-horizontal"/>
+			</div>
+
+			<div id="calibration-data-1" class="segment">
+				<input id="calibration-data-1-1" type="button" class="segment-horizontal"/><br/>
+				<input id="calibration-data-1-2" type="button" class="segment-vertical"/>
+				<input id="calibration-data-1-3" type="button" class="segment-vertical"/><br/>
+				<input id="calibration-data-1-4" type="button" class="segment-horizontal"/><br/>
+				<input id="calibration-data-1-5" type="button" class="segment-vertical"/>
+				<input id="calibration-data-1-6" type="button" class="segment-vertical"/><br/>
+				<input id="calibration-data-1-7" type="button" class="segment-horizontal"/>
+			</div>
+		</div>
+		<p><label for="advanced-command">Commande manuel: </label><input type="text" name="advanced-command" size="50" id="advanced-command"/><input type="button" id="go" value="go"/>
+	</div>
+</div>
+
+<script type="text/javascript" src="static/jquery-3.5.1.slim.min.js"></script>
+<script type="text/javascript" src="static/segment-display.min.js"></script>
+<script type="text/javascript">
+var ws;
+var refreshData = true;
+var currentLap = null;
+var sendInProgress = true;
+var display = new SegmentDisplay("display");
+display.pattern         = "##";
+display.displayAngle    = 20;
+display.digitHeight     = 20;
+display.digitWidth      = 14;
+display.digitDistance   = 2.5;
+display.segmentWidth    = 2;
+display.segmentDistance = 0.3;
+display.segmentCount    = 7;
+display.cornerType      = 2;
+display.colorOn         = "#e95d0f";
+display.colorOff        = "#3b0e00";
+display.draw();
+display.setValue("");
+
+
+function send_command(command, data, extra) {
+	sendInProgress = true;
+	var jsonData = JSON.stringify({c:command, d:data, e:extra});
+	console.log("Sending: " + jsonData);
+	ws.send(jsonData);
+}
+
+function cmd_laps_get(data) {
+	currentLap = data;
+	if (data === null)
+		display.setValue("--");
+	else
+		display.setValue(data);
+}
+
+function show_calibration_data(position, data) {
+	for (var i=1; i<=7; i++) {
+		$("#calibration-data-" + position + "-" + i).val(data[i]);
+	}
+}
+
+function pin_set(pin, extra) {
+	var invert = $("#calibration-data-invert").prop("checked");
+	var off_pins = pin_set.all_pins.slice();
+	var pin_index = off_pins.indexOf(pin);
+
+	if (pin_index > -1) {
+		off_pins.splice(pin_index, 1);
+	}
+
+	if (extra === undefined) extra = null;
+
+	if (invert === true)
+		send_command("pins_set", {off:[pin], on:off_pins}, extra);
+	else
+		send_command("pins_set", {on:[pin], off:off_pins}, extra);
+}
+
+function save_calibration() {
+	var new_calibration = {
+		"invert": $("#calibration-data-invert").prop("checked"),
+		"0": {},
+		"1": {}
+	};
+
+	for (var position=0; position<=1; position++) {
+		for (var segment=1; segment<=7; segment++) {
+			new_calibration[position.toString()][segment.toString()] = $("#calibration-data-" + position + "-" + segment).val();
+		}
+	}
+
+	send_command("calibration_set", new_calibration);
+}
+
+function start_calibration(command_name, data) {
+	var pin;
+
+	switch (command_name) {
+		case undefined:
+			send_command("get_pins", null, "calib");
+			break;
+		case "cmd_get_pins":
+			pin_set.all_pins = data.slice();
+			start_calibration.all_pins = data;
+			start_calibration.done_pins = [];
+			$("div.segment>input").val("");
+			pin = start_calibration.all_pins.pop();
+			start_calibration.done_pins.push(pin);
+			start_calibration.current_pin = pin;
+			start_calibration.started = false;
+			pin_set(pin, "calib");
+			break;
+		case "cmd_pins_set":
+			if (start_calibration.started === false) {
+				start_calibration.started = true;
+				enableButtons(2);
+			}
+			break;
+		case "next_pin":
+			$(data)
+				.prop("disabled", true)
+				.css("background-color", "darkgrey")
+				.val(start_calibration.current_pin);
+			pin = start_calibration.all_pins.pop();
+			if (pin === undefined) {
+				save_calibration();
+			} else {
+				start_calibration.done_pins.push(pin);
+				start_calibration.current_pin = pin;
+				pin_set(pin, "calib");
+			}
+			break;
+	}
+}
+
+function cmd_calibration_get(data) {
+	switch (data.key) {
+	case "invert":
+		$("#calibration-data-invert").prop("checked", data.data);
+		break;
+	case "0":
+		show_calibration_data(data.key, data.data);
+		break;
+	case "1":
+		show_calibration_data(data.key, data.data);
+		break;
+	}
+}
+
+function handle_startup(command_name, data) {
+	switch (command_name) {
+		case "cmd_laps_get":
+			send_command("calibration_get", {key:"invert"}, "startup");
+			break;
+		case "cmd_calibration_get":
+			switch (data.key) {
+				case "invert":
+					send_command("calibration_get", {key:"0"}, "startup");
+					break;
+				case "0":
+					send_command("calibration_get", {key:"1"}, "startup");
+					break;
+				case "1":
+					enableButtons(1);
+					refreshData = false;
+					break;
+			}
+			break;
+	}
+}
+
+function connect() {
+	ws = new WebSocket('ws://' + window.location.hostname + '/ws');
+	ws.onopen = function() {
+		sendInProgress = true;
+		refreshData = true;
+		send_command("laps_get", null, "startup");
+	};
+
+	ws.onmessage = function(e) {
+		console.log('Message:', e.data);
+		var result = JSON.parse(e.data);
+
+		switch (result.e) {
+		case "startup":
+				handle_startup(result.r, result.d);
+				break;
+		case "calib":
+				start_calibration(result.r, result.d);
+				break;
+		}
+
+		switch (result.r) {
+		case "cmd_laps_set":
+			cmd_laps_get(result.d);
+			break;
+		case "cmd_laps_get":
+			cmd_laps_get(result.d);
+			break;
+		case "cmd_calibration_get":
+			cmd_calibration_get(result.d);
+			break;
+		case "cmd_calibration_set":
+			send_command("laps_set", {laps:currentLap});
+			alert("Nouvelle calibration enregistré.");
+			start_calibration.current_pin = undefined;
+			break;
+		}
+		sendInProgress = false;
+	};
+
+	ws.onclose = function(e) {
+		sendInProgress = true;
+		console.log('Socket is closed. Reconnect will be attempted in 1 second.', e.reason);
+		setTimeout(function() {
+			connect();
+		}, 1000);
+	};
+
+	ws.onerror = function(err) {
+		sendInProgress = true;
+		console.error('Socket encountered error: ', err.message, 'Closing socket');
+		ws.close();
+	};
+}
+
+function enableButtons(value) {
+	var calibrationDataFrame = $("#calibration-data");
+	var calibrationButtons = $("input", calibrationDataFrame);
+	var calibrationSegments = $("div.segment>input");
+
+	calibrationDataFrame.css("display", "block");
+
+	if (value === 0) {
+		calibrationButtons.prop("disabled", true);
+	} else if (value === 1) {
+		calibrationButtons.prop("disabled", false);
+		calibrationSegments.prop("disabled", true);
+		calibrationSegments.css("background-color", "darkgrey");
+		calibrationSegments.css("color", "black");
+	} else if (value === 2) {
+		calibrationButtons.prop("disabled", false);
+		calibrationSegments.css("background-color", "green");
+	}
+}
+
+$(document).ready(function () {
+	$("#calibration-start").on("click", function (e) { start_calibration(); });
+	$("#advanced-button").on("click", function (e) {
+		$("#advanced-panel").toggle();
+	});
+	$("div.segment>input").on("click", function (e) {
+		start_calibration("next_pin", e.target);
+	});
+	$("#go").on("click", function () {
+		ws.send($("#advanced-command").val());
+	});
+	$("#counter-plus").on("click", function () {
+		if (currentLap == null)
+			currentLap = 0;
+		else
+			currentLap++;
+		send_command("laps_set", {laps:currentLap});
+	});
+	$("#counter-minus").on("click", function () {
+		if (currentLap == null)
+			currentLap = 0;
+		else
+			currentLap--;
+		send_command("laps_set", {laps:currentLap});
+	});
+	$("#counter-reset").on("click", function () {
+		currentLap = null;
+		send_command("laps_set", {laps:currentLap});
+	});
+	$("#counter-set").on("click", function () {
+		var newLap = parseInt(window.prompt("Combien de tours?", "0"));
+		if (-9 <= newLap <= 99) {
+			currentLap = newLap;
+			send_command("laps_set", {laps:currentLap});
+		} else if (newLap === NaN ) {
+			currentLap = null;
+			send_command("laps_set", {laps:currentLap});
+		} else {
+			window.alert("Nombre de tours invalide, choisir entre -9 et 99.");
+		}
+	});
+	setInterval(function () {
+		if (sendInProgress === false && start_calibration.current_pin === undefined)
+			send_command("laps_get");
+	}, 3000);
+});
+
+$("#advanced-panel").hide();
+enableButtons(0);
+connect();
+
+</script>
+
+</body>
+</html>
